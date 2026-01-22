@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <title>彈幕輸入端</title>
 <link rel="stylesheet" href="style.css">
+<script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
 
@@ -21,7 +22,6 @@
   <button id="sendBtn">送出</button>
 </div>
 
-<script src="/socket.io/socket.io.js"></script>
 <script>
 const socket = io();
 const container = document.getElementById('danmakuContainer');
@@ -33,14 +33,14 @@ const bgImage = document.getElementById('bgImage');
 let settings = {};
 let bannedWords = [];
 
-// 接收主持人設定
+// 接收設定
 socket.on('updateSettings', data => {
   settings = data.settings;
   bannedWords = data.bannedWords;
-  if(settings.backgroundType === 'video'){
+  if(settings.backgroundType==='video'){
     bgVideo.style.display='block';
     bgImage.style.display='none';
-  } else {
+  }else{
     bgVideo.style.display='none';
     bgImage.style.display='block';
   }
@@ -50,18 +50,9 @@ socket.on('updateSettings', data => {
 sendBtn.onclick = () => {
   const text = input.value.trim();
   if(!text) return;
-  if(bannedWords.some(word => text.includes(word))){
-    alert('包含禁止詞彙！');
-    return;
-  }
   socket.emit('sendDanmaku', text);
-  input.value = '';
+  input.value='';
 };
-
-// 禁詞警告
-socket.on('bannedAlert', msg => {
-  alert('彈幕含禁詞，無法送出: ' + msg);
-});
 
 // 接收彈幕
 socket.on('receiveDanmaku', msg => {
@@ -72,21 +63,18 @@ socket.on('receiveDanmaku', msg => {
 
 function createDanmaku(msg){
   const div = document.createElement('div');
-  div.className = 'danmaku';
-  div.innerText = msg;
-  // 固定中上方
-  div.style.top = (Math.random()*20 + 10) + '%';
-  div.style.left = -div.offsetWidth + 'px';
+  div.className='danmaku';
+  div.innerText=msg;
+  div.style.top=(Math.random()*20+10)+'%';
+  div.style.left=-div.offsetWidth+'px';
   container.appendChild(div);
-
-  let speedValue = settings.barrageSpeed + 1;
-
+  let speedValue=settings.barrageSpeed+1;
   function animate(){
-    let currentX = parseFloat(div.style.left);
-    div.style.left = currentX + speedValue + 'px';
-    if(currentX < window.innerWidth){
+    let currentX=parseFloat(div.style.left);
+    div.style.left=currentX+speedValue+'px';
+    if(currentX<window.innerWidth){
       requestAnimationFrame(animate);
-    } else {
+    }else{
       div.remove();
     }
   }
