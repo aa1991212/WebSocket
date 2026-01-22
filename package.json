@@ -1,19 +1,29 @@
 {
   "name": "project",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.22.1",
+    "multer": "^1.4.5-lts.1",
+    "socket.io": "^4.8.3"
+  },
+  "description": "",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/aa1991212/WebSocket.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
-  "dependencies": {
-    "express": "^5.2.1",
-    "qrcode": "^1.5.4",
-    "socket.io": "^4.8.3",
-    "ws": "^8.19.0"
+  "bugs": {
+    "url": "https://github.com/aa1991212/WebSocket/issues"
+  },
+  "homepage": "https://github.com/aa1991212/WebSocket#readme",
+  "devDependencies": {
+    "nodemon": "^3.1.11"
   }
 }
