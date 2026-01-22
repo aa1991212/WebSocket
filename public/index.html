@@ -1,233 +1,460 @@
-<!DOCTYPE html>
-<html lang="zh-TW">
+<!doctype html>
+<html lang="zh-Hant">
 <head>
-<meta charset="UTF-8">
-<title>彈幕系統</title>
-<link rel="stylesheet" href="style.css">
-<script src="/socket.io/socket.io.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>彈幕系統</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="/socket.io/socket.io.js"></script>
 </head>
+
 <body>
-
-<!-- 背景 -->
-<div id="bgContainer">
-  <video id="bgVideo" autoplay loop muted class="bg-media">
-    <source src="bg.mp4" type="video/mp4">
-  </video>
-  <img id="bgImage" src="bg.jpg" class="bg-media" style="display:none;">
-</div>
-
-<!-- 彈幕顯示區 -->
-<div id="danmakuContainer"></div>
-
-<!-- 輸入區 -->
-<div id="inputPanel">
-  <input type="text" id="danmakuInput" placeholder="輸入彈幕...">
-  <input type="color" id="colorPicker" value="#ffffff">
-  <button id="sendBtn">送出</button>
-  <button id="adminBtn">管理員</button>
-</div>
-
-<!-- 管理員控制面板 -->
-<div id="controls" style="display:none;">
-  <h3>管理員面板</h3>
-
-  <div>
-    <label>彈幕速度：</label>
-    <input type="range" id="speed" min="1" max="10">
-    <span id="speedLabel"></span>
+  <!-- 背景層 -->
+  <div id="bg">
+    <video id="bgVideo" class="bg-media" autoplay loop muted playsinline style="display:none;"></video>
+    <img id="bgImage" class="bg-media" alt="background" style="display:none;" />
+    <div id="bgFallback" class="bg-fallback"></div>
   </div>
 
-  <div>
-    <label>彈幕密度：</label>
-    <input type="range" id="density" min="1" max="10">
-    <span id="densityLabel"></span>
+  <!-- 彈幕層 -->
+  <div id="danmakuLayer" aria-hidden="true"></div>
+
+  <!-- Topbar -->
+  <div class="topbar">
+    <div class="brand">Danmaku</div>
+    <div class="hint" id="modeHint">請選擇進入身分</div>
   </div>
 
-  <div>
-    <label>背景影片：</label>
-    <input type="file" id="videoUpload" accept="video/*">
-  </div>
-  <div>
-    <label>背景圖片：</label>
-    <input type="file" id="imageUpload" accept="image/*">
+  <!-- 入口：觀眾 / 管理員 -->
+  <div id="entry" class="card entry">
+    <h1>進入彈幕系統</h1>
+    <p class="muted">觀眾免密碼；管理員需輸入密碼才能開啟管理面板。</p>
+
+    <div class="entry-actions">
+      <button id="btnAudience" class="btn primary">觀眾進入</button>
+      <button id="btnAdmin" class="btn">管理員進入</button>
+    </div>
+
+    <div class="muted small">
+      觀眾可送出彈幕；管理員可設定背景、禁詞、速度、密度、軌道數，並同步給所有人。
+    </div>
   </div>
 
-  <div id="bannedListContainer">
-    <h4>禁詞清單 <button id="toggleBannedList">展開/收起</button></h4>
-    <ul id="bannedList" style="display:none; max-height:150px; overflow-y:auto;"></ul>
-    <input type="text" id="newBannedWord" placeholder="新增禁詞">
-    <button id="addBannedBtn">新增禁詞</button>
+  <!-- 主介面：輸入區（觀眾也會看到） -->
+  <div id="mainUI" class="card main" style="display:none;">
+    <div class="row">
+      <input id="danmakuInput" class="input" type="text" placeholder="輸入彈幕文字…" maxlength="120" />
+      <input id="colorPicker" class="color" type="color" value="#ffffff" />
+      <button id="btnSend" class="btn primary">送出</button>
+    </div>
+    <div class="muted small" id="statusLine">已連線</div>
   </div>
 
-  <div>
-    <h4>QR Code</h4>
-    <canvas id="qrcode"></canvas>
+  <!-- 管理員面板（登入後顯示） -->
+  <div id="adminPanel" class="card admin" style="display:none;">
+    <div class="admin-head">
+      <div>
+        <div class="admin-title">管理員面板</div>
+        <div class="muted small">所有設定會同步到所有人</div>
+      </div>
+      <button id="btnBanDrawer" class="btn small">禁詞清單</button>
+    </div>
+
+    <div class="grid">
+      <div class="field">
+        <label>彈幕速度</label>
+        <input id="speed" type="range" min="1" max="20" />
+        <div class="value"><span id="speedVal"></span></div>
+      </div>
+
+      <div class="field">
+        <label>彈幕密度</label>
+        <input id="density" type="range" min="1" max="10" />
+        <div class="value"><span id="densityVal"></span></div>
+      </div>
+
+      <div class="field">
+        <label>軌道數（平均分佈）</label>
+        <input id="lanes" type="range" min="4" max="20" />
+        <div class="value"><span id="lanesVal"></span></div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="bg-tools">
+      <div class="bg-tools-title">背景設定（可視化操作）</div>
+
+      <div class="row wrap">
+        <button id="btnPickFile" class="btn">選擇背景檔案</button>
+        <input id="fileInput" type="file" accept="image/*,video/*" style="display:none;" />
+        <button id="btnClearBg" class="btn danger">清除背景</button>
+      </div>
+
+      <div class="row">
+        <input id="bgUrl" class="input" type="text" placeholder="或輸入圖片/影片網址（http/https）…" />
+        <button id="btnApplyUrl" class="btn">套用網址</button>
+      </div>
+
+      <div class="muted small">
+        選擇檔案會自動上傳並同步；輸入網址也會同步到所有人。
+      </div>
+    </div>
   </div>
-</div>
+
+  <!-- 禁詞抽屜 -->
+  <div id="drawerMask" class="drawer-mask" style="display:none;"></div>
+  <aside id="banDrawer" class="drawer" aria-hidden="true">
+    <div class="drawer-head">
+      <div class="drawer-title">禁詞清單</div>
+      <button id="btnCloseDrawer" class="btn small">關閉</button>
+    </div>
+
+    <div class="row">
+      <input id="banInput" class="input" type="text" placeholder="新增禁詞…" />
+      <button id="btnAddBan" class="btn primary">新增</button>
+    </div>
+
+    <div id="banList" class="ban-list"></div>
+
+    <div class="muted small">
+      禁詞變更會立即同步；觀眾送出包含禁詞會被阻擋。
+    </div>
+  </aside>
 
 <script>
-const socket = io();
+(() => {
+  const socket = io();
 
-// DOM 元件
-const container = document.getElementById('danmakuContainer');
-const input = document.getElementById('danmakuInput');
-const sendBtn = document.getElementById('sendBtn');
-const colorPicker = document.getElementById('colorPicker');
-const bgVideo = document.getElementById('bgVideo');
-const bgImage = document.getElementById('bgImage');
+  // ===== DOM =====
+  const entry = document.getElementById("entry");
+  const mainUI = document.getElementById("mainUI");
+  const adminPanel = document.getElementById("adminPanel");
+  const modeHint = document.getElementById("modeHint");
+  const statusLine = document.getElementById("statusLine");
 
-const controls = document.getElementById('controls');
-const speedSlider = document.getElementById('speed');
-const densitySlider = document.getElementById('density');
-const speedLabel = document.getElementById('speedLabel');
-const densityLabel = document.getElementById('densityLabel');
-const bgSelectVideo = document.getElementById('videoUpload');
-const bgSelectImage = document.getElementById('imageUpload');
-const bannedList = document.getElementById('bannedList');
-const addBannedBtn = document.getElementById('addBannedBtn');
-const newBannedWordInput = document.getElementById('newBannedWord');
-const toggleBtn = document.getElementById('toggleBannedList');
-const adminBtn = document.getElementById('adminBtn');
+  const btnAudience = document.getElementById("btnAudience");
+  const btnAdmin = document.getElementById("btnAdmin");
+  const btnSend = document.getElementById("btnSend");
+  const danmakuInput = document.getElementById("danmakuInput");
+  const colorPicker = document.getElementById("colorPicker");
 
-let settings = {barrageSpeed:2, barrageDensity:1, backgroundType:'video'};
-let bannedWords = [];
+  const speed = document.getElementById("speed");
+  const density = document.getElementById("density");
+  const lanes = document.getElementById("lanes");
+  const speedVal = document.getElementById("speedVal");
+  const densityVal = document.getElementById("densityVal");
+  const lanesVal = document.getElementById("lanesVal");
 
-// QR Code
-const qrcodeCanvas = document.getElementById('qrcode');
-QRCode.toCanvas(qrcodeCanvas, window.location.href, { width:128 }, (err) => {if(err) console.error(err);});
+  const btnPickFile = document.getElementById("btnPickFile");
+  const fileInput = document.getElementById("fileInput");
+  const bgUrl = document.getElementById("bgUrl");
+  const btnApplyUrl = document.getElementById("btnApplyUrl");
+  const btnClearBg = document.getElementById("btnClearBg");
 
-// 管理員登入
-adminBtn.onclick = () => {
-  const pwd = prompt('請輸入管理員密碼：');
-  if(pwd === '123456'){ // 可替換成你的密碼
-    controls.style.display = 'block';
-    alert('管理員登入成功');
-  } else {
-    alert('密碼錯誤');
+  const bgVideo = document.getElementById("bgVideo");
+  const bgImage = document.getElementById("bgImage");
+  const bgFallback = document.getElementById("bgFallback");
+
+  const danmakuLayer = document.getElementById("danmakuLayer");
+
+  const btnBanDrawer = document.getElementById("btnBanDrawer");
+  const banDrawer = document.getElementById("banDrawer");
+  const drawerMask = document.getElementById("drawerMask");
+  const btnCloseDrawer = document.getElementById("btnCloseDrawer");
+  const banInput = document.getElementById("banInput");
+  const btnAddBan = document.getElementById("btnAddBan");
+  const banList = document.getElementById("banList");
+
+  // ===== State =====
+  let isEntered = false;
+  let isAdmin = false;
+
+  let settings = {
+    barrageSpeed: 6,
+    barrageDensity: 1,
+    lanes: 10,
+    bg: { type: "none", url: "" }
+  };
+  let bannedWords = [];
+
+  function showMainUI() {
+    entry.style.display = "none";
+    mainUI.style.display = "block";
+    isEntered = true;
+    modeHint.textContent = isAdmin ? "管理員模式" : "觀眾模式";
   }
-};
 
-// 彈出/收起禁詞清單
-toggleBtn.onclick = () => {
-  bannedList.style.display = bannedList.style.display==='none'?'block':'none';
-};
-
-// 更新禁詞 UI
-function updateBannedListUI(){
-  bannedList.innerHTML='';
-  bannedWords.forEach(word=>{
-    const li=document.createElement('li');
-    li.textContent=word;
-    const delBtn=document.createElement('button');
-    delBtn.textContent='刪除';
-    delBtn.onclick=()=>socket.emit('removeBannedWord', word);
-    li.appendChild(delBtn);
-    bannedList.appendChild(li);
-  });
-}
-
-// Socket.IO
-socket.on('updateSettings', data=>{
-  settings=data.settings;
-  bannedWords=data.bannedWords;
-
-  speedSlider.value=settings.barrageSpeed;
-  densitySlider.value=settings.barrageDensity;
-  speedLabel.innerText=settings.barrageSpeed;
-  densityLabel.innerText=settings.barrageDensity;
-
-  updateBannedListUI();
-
-  if(settings.backgroundType==='video'){
-    bgVideo.style.display='block';
-    bgImage.style.display='none';
-  } else {
-    bgVideo.style.display='none';
-    bgImage.style.display='block';
+  function showAdminUI() {
+    adminPanel.style.display = "block";
   }
-});
-
-// 發送彈幕
-sendBtn.onclick = () => {
-  const text = input.value.trim();
-  if(!text) return;
-  if(bannedWords.some(word => text.includes(word))){
-    alert('包含禁止詞彙！');
-    return;
+  function hideAdminUI() {
+    adminPanel.style.display = "none";
   }
-  socket.emit('sendDanmaku', {text, color: colorPicker.value});
-  input.value='';
-};
 
-// 接收彈幕
-socket.on('receiveDanmaku', data=>{
-  for(let i=0;i<settings.barrageDensity;i++){
-    createDanmaku(data);
+  function openDrawer() {
+    banDrawer.classList.add("open");
+    banDrawer.setAttribute("aria-hidden", "false");
+    drawerMask.style.display = "block";
+    setTimeout(() => drawerMask.classList.add("show"), 0);
   }
-});
+  function closeDrawer() {
+    banDrawer.classList.remove("open");
+    banDrawer.setAttribute("aria-hidden", "true");
+    drawerMask.classList.remove("show");
+    setTimeout(() => drawerMask.style.display = "none", 180);
+  }
 
-// 創建彈幕
-function createDanmaku({text, color}){
-  const div=document.createElement('div');
-  div.className='danmaku';
-  div.innerText=text;
-  div.style.color=color || '#fff';
-  div.style.top=(Math.random()*50+10)+'%';
-  div.style.left=-100+'px';
-  container.appendChild(div);
+  function renderBanList() {
+    banList.innerHTML = "";
+    if (!bannedWords.length) {
+      const empty = document.createElement("div");
+      empty.className = "muted small";
+      empty.textContent = "目前沒有禁詞";
+      banList.appendChild(empty);
+      return;
+    }
+    bannedWords.forEach(word => {
+      const row = document.createElement("div");
+      row.className = "ban-item";
+      const txt = document.createElement("div");
+      txt.className = "ban-word";
+      txt.textContent = word;
 
-  let speed=settings.barrageSpeed;
+      const del = document.createElement("button");
+      del.className = "btn small danger";
+      del.textContent = "刪除";
+      del.onclick = () => socket.emit("adminRemoveBanned", { word });
 
-  function animate(){
-    let currentX=parseFloat(div.style.left);
-    div.style.left=currentX+speed+'px';
-    if(currentX<window.innerWidth){
-      requestAnimationFrame(animate);
-    } else {
-      div.remove();
+      row.appendChild(txt);
+      row.appendChild(del);
+      banList.appendChild(row);
+    });
+  }
+
+  function applyBackground(bg) {
+    bgVideo.pause();
+    bgVideo.removeAttribute("src");
+    bgVideo.load();
+    bgVideo.style.display = "none";
+
+    bgImage.removeAttribute("src");
+    bgImage.style.display = "none";
+
+    bgFallback.style.display = "block";
+
+    if (!bg || bg.type === "none" || !bg.url) return;
+
+    if (bg.type === "video") {
+      bgVideo.src = bg.url;
+      bgVideo.style.display = "block";
+      bgFallback.style.display = "none";
+      bgVideo.play().catch(() => {});
+    } else if (bg.type === "image") {
+      bgImage.src = bg.url;
+      bgImage.style.display = "block";
+      bgFallback.style.display = "none";
     }
   }
-  requestAnimationFrame(animate);
-}
 
-// 管理員控制
-speedSlider.oninput=()=> {
-  speedLabel.innerText=speedSlider.value;
-  socket.emit('updateSettings',{barrageSpeed:parseInt(speedSlider.value)});
-};
-densitySlider.oninput=()=> {
-  densityLabel.innerText=densitySlider.value;
-  socket.emit('updateSettings',{barrageDensity:parseInt(densitySlider.value)});
-};
-bgSelectVideo.onchange=(e)=>{
-  const file=e.target.files[0];
-  if(file){
-    const url=URL.createObjectURL(file);
-    bgVideo.src=url;
-    bgVideo.style.display='block';
-    bgImage.style.display='none';
-    socket.emit('updateSettings',{backgroundType:'video'});
+  // 平均分佈：依 lane 計算 top
+  function laneTopPx(lane, lanesCount) {
+    const h = window.innerHeight;
+    const paddingTop = 56;
+    const paddingBottom = 120;
+    const usable = Math.max(120, h - paddingTop - paddingBottom);
+    const step = usable / lanesCount;
+    const y = paddingTop + lane * step + Math.min(10, step * 0.15);
+    return Math.floor(y);
   }
-};
-bgSelectImage.onchange=(e)=>{
-  const file=e.target.files[0];
-  if(file){
-    const url=URL.createObjectURL(file);
-    bgImage.src=url;
-    bgImage.style.display='block';
-    bgVideo.style.display='none';
-    socket.emit('updateSettings',{backgroundType:'image'});
-  }
-};
 
-// 新增禁詞
-addBannedBtn.onclick=()=>{
-  const word=newBannedWordInput.value.trim();
-  if(word) socket.emit('addBannedWord', word);
-  newBannedWordInput.value='';
-};
+  function createDanmaku({ text, color, lane }) {
+    const div = document.createElement("div");
+    div.className = "danmaku";
+    div.textContent = text;
+    div.style.borderColor = color || "#ffffff";
+    div.style.color = color || "#ffffff";
+
+    const lanesCount = Math.max(4, settings.lanes || 10);
+    const laneIdx = Math.max(0, Math.min(lanesCount - 1, Number.isFinite(lane) ? lane : 0));
+    div.style.top = laneTopPx(laneIdx, lanesCount) + "px";
+
+    const startX = -300;
+    const endX = window.innerWidth + 350;
+
+    danmakuLayer.appendChild(div);
+
+    const distance = endX - startX;
+    const sp = Math.max(1, settings.barrageSpeed || 6);
+    const seconds = Math.max(3, Math.min(18, distance / (sp * 60)));
+
+    div.animate(
+      [
+        { transform: `translateX(${startX}px)` },
+        { transform: `translateX(${endX}px)` }
+      ],
+      { duration: seconds * 1000, easing: "linear", fill: "forwards" }
+    );
+
+    setTimeout(() => div.remove(), seconds * 1000 + 50);
+  }
+
+  function syncSliders() {
+    speed.value = settings.barrageSpeed;
+    density.value = settings.barrageDensity;
+    lanes.value = settings.lanes;
+
+    speedVal.textContent = settings.barrageSpeed;
+    densityVal.textContent = settings.barrageDensity;
+    lanesVal.textContent = settings.lanes;
+  }
+
+  // ===== 入口 =====
+  btnAudience.onclick = () => {
+    isAdmin = false;
+    showMainUI();
+    hideAdminUI();
+  };
+
+  btnAdmin.onclick = () => {
+    const pwd = prompt("請輸入管理員密碼：");
+    if (pwd == null) return;
+    socket.emit("adminLogin", { password: pwd });
+  };
+
+  socket.on("adminLoginResult", (res) => {
+    if (res?.ok) {
+      isAdmin = true;
+      showMainUI();
+      showAdminUI();
+      modeHint.textContent = "管理員模式";
+    } else {
+      alert(res?.error || "密碼錯誤");
+      // 密碼錯：只提示，不切換、不跳轉
+    }
+  });
+
+  // ===== 發送彈幕 =====
+  function send() {
+    if (!isEntered) return;
+    const text = (danmakuInput.value || "").trim();
+    if (!text) return;
+    socket.emit("sendDanmaku", { text, color: colorPicker.value });
+    danmakuInput.value = "";
+  }
+  btnSend.onclick = send;
+  danmakuInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") send();
+  });
+
+  socket.on("bannedAlert", (res) => {
+    alert(res?.error || "包含禁止詞");
+  });
+
+  socket.on("danmaku", (data) => {
+    const densityCount = Math.max(1, Math.min(10, settings.barrageDensity || 1));
+    for (let i = 0; i < densityCount; i++) createDanmaku(data);
+  });
+
+  socket.on("state", (data) => {
+    if (data?.settings) settings = data.settings;
+    if (Array.isArray(data?.bannedWords)) bannedWords = data.bannedWords;
+
+    syncSliders();
+    renderBanList();
+    applyBackground(settings.bg);
+
+    statusLine.textContent = "已同步設定";
+    setTimeout(() => (statusLine.textContent = "已連線"), 800);
+  });
+
+  // ===== 管理員設定 =====
+  function emitSettings() {
+    if (!isAdmin) return;
+    socket.emit("adminUpdateSettings", {
+      barrageSpeed: Number(speed.value),
+      barrageDensity: Number(density.value),
+      lanes: Number(lanes.value)
+    });
+  }
+  speed.oninput = () => { speedVal.textContent = speed.value; emitSettings(); };
+  density.oninput = () => { densityVal.textContent = density.value; emitSettings(); };
+  lanes.oninput = () => { lanesVal.textContent = lanes.value; emitSettings(); };
+
+  // ===== 禁詞抽屜 =====
+  btnBanDrawer.onclick = () => { if (isAdmin) openDrawer(); };
+  btnCloseDrawer.onclick = closeDrawer;
+  drawerMask.onclick = closeDrawer;
+
+  btnAddBan.onclick = () => {
+    if (!isAdmin) return;
+    const word = (banInput.value || "").trim();
+    if (!word) return;
+    socket.emit("adminAddBanned", { word });
+    banInput.value = "";
+  };
+  banInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") btnAddBan.click();
+  });
+
+  // ===== 背景：選檔上傳 =====
+  btnPickFile.onclick = () => { if (isAdmin) fileInput.click(); };
+
+  fileInput.onchange = async (e) => {
+    if (!isAdmin) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      statusLine.textContent = "上傳背景中…";
+      const fd = new FormData();
+      fd.append("file", file);
+
+      const resp = await fetch("/api/upload", { method: "POST", body: fd });
+      const json = await resp.json();
+      if (!json.ok) {
+        alert(json.error || "上傳失敗");
+        statusLine.textContent = "已連線";
+        return;
+      }
+
+      socket.emit("adminSetBackground", { type: json.kind, url: json.url });
+      statusLine.textContent = "背景已更新";
+      setTimeout(() => (statusLine.textContent = "已連線"), 800);
+    } catch (err) {
+      alert("上傳失敗（網路/權限）");
+      statusLine.textContent = "已連線";
+    } finally {
+      fileInput.value = "";
+    }
+  };
+
+  // ===== 背景：輸入網址套用 =====
+  function guessTypeByUrl(url) {
+    const u = url.toLowerCase();
+    if (u.match(/\.(mp4|webm|ogv|mov)(\?.*)?$/)) return "video";
+    if (u.match(/\.(jpg|jpeg|png|webp|gif)(\?.*)?$/)) return "image";
+    return "image";
+  }
+
+  btnApplyUrl.onclick = () => {
+    if (!isAdmin) return;
+    const url = (bgUrl.value || "").trim();
+    if (!url) return;
+
+    const type = guessTypeByUrl(url);
+    socket.emit("adminSetBackground", { type, url });
+    bgUrl.value = "";
+  };
+
+  btnClearBg.onclick = () => {
+    if (!isAdmin) return;
+    socket.emit("adminSetBackground", { type: "none", url: "" });
+  };
+
+  socket.on("connect", () => { statusLine.textContent = "已連線"; });
+  socket.on("disconnect", () => { statusLine.textContent = "連線中斷（請刷新）"; });
+})();
 </script>
-
 </body>
 </html>
