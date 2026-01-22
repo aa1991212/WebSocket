@@ -10,18 +10,14 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-// ====== 你可以改這裡：管理員密碼（也可用 Render 環境變數 ADMIN_PASSWORD） ======
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "123456";
 
-// ====== 上傳檔存放（Render 上是暫存，重啟會消失；現場活動通常足夠）=====
 const UPLOAD_DIR = path.join("/tmp", "uploads");
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
-// ====== 靜態目錄 ======
 app.use(express.static(path.join(__dirname, "public")));
 app.use("/uploads", express.static(UPLOAD_DIR));
 
-// ====== 上傳：memory -> 落地到 /tmp/uploads =====
 const upload = multer({ storage: multer.memoryStorage() });
 
 function safeExt(mime, originalName) {
@@ -46,47 +42,37 @@ app.post("/api/upload", upload.single("file"), (req, res) => {
     const mime = req.file.mimetype || "";
     const isImage = mime.startsWith("image/");
     const isVideo = mime.startsWith("video/");
-    if (!isImage && !isVideo) {
-      return res.status(400).json({ ok: false, error: "只允許圖片或影片" });
-    }
+    if (!isImage && !isVideo) return res.status(400).json({ ok: false, error: "只允許圖片或影片" });
 
     const ext = safeExt(mime, req.file.originalname);
     const id = crypto.randomBytes(10).toString("hex");
     const filename = `${Date.now()}_${id}${ext}`;
-    const filepath = path.join(UPLOAD_DIR, filename);
+    fs.writeFileSync(path.join(UPLOAD_DIR, filename), req.file.buffer);
 
-    fs.writeFileSync(filepath, req.file.buffer);
-
-    const publicUrl = `/uploads/${filename}`;
-    res.json({ ok: true, url: publicUrl, kind: isVideo ? "video" : "image" });
+    res.json({ ok: true, url: `/uploads/${filename}`, kind: isVideo ? "video" : "image" });
   } catch (e) {
     res.status(500).json({ ok: false, error: "上傳失敗" });
   }
 });
 
-// ====== 全域狀態（同步給所有人）=====
 let settings = {
-  barrageSpeed: 6,      // px/frame（大概）
-  barrageDensity: 1,    // 每則訊息生成幾條（1~10）
-  lanes: 10,            // 軌道數（平均分佈）
+  barrageSpeed: 6,
+  barrageDensity: 1,
+  lanes: 10,
   bg: { type: "none", url: "" } // none | image | video
 };
-
 let bannedWords = [];
 let laneCursor = 0;
 
 function containsBanned(text) {
-  if (!text) return false;
   return bannedWords.some(w => w && text.includes(w));
 }
 
 io.on("connection", (socket) => {
   socket.data.isAdmin = false;
 
-  // 新連線：先給目前狀態
   socket.emit("state", { settings, bannedWords });
 
-  // ===== 管理員登入 =====
   socket.on("adminLogin", (payload) => {
     const pwd = (payload?.password || "").toString();
     if (pwd === ADMIN_PASSWORD) {
@@ -97,11 +83,9 @@ io.on("connection", (socket) => {
     }
   });
 
-  // ===== 送彈幕 =====
   socket.on("sendDanmaku", (payload) => {
     const text = (payload?.text || "").toString().trim();
     const color = (payload?.color || "#ffffff").toString();
-
     if (!text) return;
 
     if (containsBanned(text)) {
@@ -109,14 +93,12 @@ io.on("connection", (socket) => {
       return;
     }
 
-    // 平均分佈：軌道輪詢
     const lane = laneCursor % settings.lanes;
     laneCursor += 1;
 
     io.emit("danmaku", { text, color, lane });
   });
 
-  // ===== 管理員：更新設定 =====
   socket.on("adminUpdateSettings", (payload) => {
     if (!socket.data.isAdmin) return;
 
@@ -129,11 +111,10 @@ io.on("connection", (socket) => {
     io.emit("state", { settings, bannedWords });
   });
 
-  // ===== 管理員：設定背景（URL 或 /uploads/...）=====
   socket.on("adminSetBackground", (payload) => {
     if (!socket.data.isAdmin) return;
 
-    const type = payload?.type; // none | image | video
+    const type = payload?.type;
     const url = (payload?.url || "").toString().trim();
 
     if (type === "none") {
@@ -148,7 +129,6 @@ io.on("connection", (socket) => {
     }
   });
 
-  // ===== 管理員：禁詞 =====
   socket.on("adminAddBanned", (payload) => {
     if (!socket.data.isAdmin) return;
     const word = (payload?.word || "").toString().trim();
@@ -165,8 +145,5 @@ io.on("connection", (socket) => {
   });
 });
 
-// ====== Render 必須用 process.env.PORT ======
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log("Server running on port:", PORT);
-});
+server.listen(PORT, () => console.log("Server running on port:", PORT));
