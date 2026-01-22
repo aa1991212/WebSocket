@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<title>彈幕輸入端</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div id="bgContainer">
+  <video id="bgVideo" autoplay loop muted class="bg-media">
+    <source src="bg.mp4" type="video/mp4">
+  </video>
+  <img id="bgImage" src="bg.jpg" class="bg-media" style="display:none;">
+</div>
+
+<div id="danmakuContainer"></div>
+
+<div id="inputPanel">
+  <input type="text" id="danmakuInput" placeholder="打字送彈幕...">
+  <button id="sendBtn">送出</button>
+</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket = io();
+const container = document.getElementById('danmakuContainer');
+const input = document.getElementById('danmakuInput');
+const sendBtn = document.getElementById('sendBtn');
+const bgVideo = document.getElementById('bgVideo');
+const bgImage = document.getElementById('bgImage');
+
+let settings = {};
+let bannedWords = [];
+
+// 接收主持人設定
+socket.on('updateSettings', data => {
+  settings = data.settings;
+  bannedWords = data.bannedWords;
+  if(settings.backgroundType === 'video'){
+    bgVideo.style.display='block';
+    bgImage.style.display='none';
+  } else {
+    bgVideo.style.display='none';
+    bgImage.style.display='block';
+  }
+});
+
+// 送出彈幕
+sendBtn.onclick = () => {
+  const text = input.value.trim();
+  if(!text) return;
+  if(bannedWords.some(word => text.includes(word))){
+    alert('包含禁止詞彙！');
+    return;
+  }
+  socket.emit('sendDanmaku', text);
+  input.value = '';
+};
+
+// 禁詞警告
+socket.on('bannedAlert', msg => {
+  alert('彈幕含禁詞，無法送出: ' + msg);
+});
+
+// 接收彈幕
+socket.on('receiveDanmaku', msg => {
+  for(let i=0;i<settings.barrageDensity;i++){
+    createDanmaku(msg);
+  }
+});
+
+function createDanmaku(msg){
+  const div = document.createElement('div');
+  div.className = 'danmaku';
+  div.innerText = msg;
+  // 固定中上方
+  div.style.top = (Math.random()*20 + 10) + '%';
+  div.style.left = -div.offsetWidth + 'px';
+  container.appendChild(div);
+
+  let speedValue = settings.barrageSpeed + 1;
+
+  function animate(){
+    let currentX = parseFloat(div.style.left);
+    div.style.left = currentX + speedValue + 'px';
+    if(currentX < window.innerWidth){
+      requestAnimationFrame(animate);
+    } else {
+      div.remove();
+    }
+  }
+  requestAnimationFrame(animate);
+}
+</script>
+</body>
+</html>

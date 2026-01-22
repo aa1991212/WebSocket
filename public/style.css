@@ -1,0 +1,22 @@
+body { margin:0; overflow:hidden; font-family:sans-serif; background:#000; color:#fff; }
+.bg-media { position:fixed; top:0; left:0; width:100%; height:100%; object-fit:cover; z-index:-1; }
+#danmakuContainer { position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; }
+.danmaku {
+  position:absolute;
+  white-space:nowrap;
+  background:rgba(0,0,0,0.5);
+  color:#fff;
+  padding:2px 8px;
+  border-radius:4px;
+  font-size:18px;
+}
+
+#controls, #inputPanel {
+  position:fixed; bottom:10px; left:10px; background:rgba(0,0,0,0.7); padding:10px; border-radius:5px;
+}
+#controls { max-width:350px; color:#fff; }
+#controls input, #controls button, #controls select { margin-right:5px; margin-top:3px;}
+#controls div { margin-bottom:5px; }
+
+#inputPanel input { width:60%; padding:5px; }
+#inputPanel button { padding:5px; }
