@@ -2,13 +2,14 @@
 <html lang="zh-TW">
 <head>
 <meta charset="UTF-8">
-<title>主持端控制面板</title>
+<title>彈幕系統</title>
 <link rel="stylesheet" href="style.css">
 <script src="/socket.io/socket.io.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
 </head>
 <body>
 
+<!-- 背景 -->
 <div id="bgContainer">
   <video id="bgVideo" autoplay loop muted class="bg-media">
     <source src="bg.mp4" type="video/mp4">
@@ -16,10 +17,20 @@
   <img id="bgImage" src="bg.jpg" class="bg-media" style="display:none;">
 </div>
 
+<!-- 彈幕顯示區 -->
 <div id="danmakuContainer"></div>
 
-<div id="controls">
-  <h3>主持人控制面板</h3>
+<!-- 輸入區 -->
+<div id="inputPanel">
+  <input type="text" id="danmakuInput" placeholder="輸入彈幕...">
+  <input type="color" id="colorPicker" value="#ffffff">
+  <button id="sendBtn">送出</button>
+  <button id="adminBtn">管理員</button>
+</div>
+
+<!-- 管理員控制面板 -->
+<div id="controls" style="display:none;">
+  <h3>管理員面板</h3>
 
   <div>
     <label>彈幕速度：</label>
@@ -34,109 +45,189 @@
   </div>
 
   <div>
-    <label>背景:</label>
-    <select id="bgSelect">
-      <option value="video">影片</option>
-      <option value="image">圖片</option>
-    </select>
+    <label>背景影片：</label>
+    <input type="file" id="videoUpload" accept="video/*">
+  </div>
+  <div>
+    <label>背景圖片：</label>
+    <input type="file" id="imageUpload" accept="image/*">
   </div>
 
-  <div>
+  <div id="bannedListContainer">
+    <h4>禁詞清單 <button id="toggleBannedList">展開/收起</button></h4>
+    <ul id="bannedList" style="display:none; max-height:150px; overflow-y:auto;"></ul>
     <input type="text" id="newBannedWord" placeholder="新增禁詞">
     <button id="addBannedBtn">新增禁詞</button>
   </div>
 
   <div>
-    <h4>觀眾端 QR Code</h4>
+    <h4>QR Code</h4>
     <canvas id="qrcode"></canvas>
   </div>
 </div>
 
 <script>
 const socket = io();
+
+// DOM 元件
 const container = document.getElementById('danmakuContainer');
+const input = document.getElementById('danmakuInput');
+const sendBtn = document.getElementById('sendBtn');
+const colorPicker = document.getElementById('colorPicker');
+const bgVideo = document.getElementById('bgVideo');
+const bgImage = document.getElementById('bgImage');
+
+const controls = document.getElementById('controls');
 const speedSlider = document.getElementById('speed');
 const densitySlider = document.getElementById('density');
 const speedLabel = document.getElementById('speedLabel');
 const densityLabel = document.getElementById('densityLabel');
-const bgSelect = document.getElementById('bgSelect');
-const bgVideo = document.getElementById('bgVideo');
-const bgImage = document.getElementById('bgImage');
-const bannedList = [];
+const bgSelectVideo = document.getElementById('videoUpload');
+const bgSelectImage = document.getElementById('imageUpload');
+const bannedList = document.getElementById('bannedList');
 const addBannedBtn = document.getElementById('addBannedBtn');
 const newBannedWordInput = document.getElementById('newBannedWord');
+const toggleBtn = document.getElementById('toggleBannedList');
+const adminBtn = document.getElementById('adminBtn');
 
-let settings = {};
+let settings = {barrageSpeed:2, barrageDensity:1, backgroundType:'video'};
 let bannedWords = [];
 
-socket.on('updateSettings', data => {
-  settings = data.settings;
-  bannedWords = data.bannedWords;
+// QR Code
+const qrcodeCanvas = document.getElementById('qrcode');
+QRCode.toCanvas(qrcodeCanvas, window.location.href, { width:128 }, (err) => {if(err) console.error(err);});
 
-  speedSlider.value = settings.barrageSpeed;
-  densitySlider.value = settings.barrageDensity;
-  speedLabel.innerText = settings.barrageSpeed;
-  densityLabel.innerText = settings.barrageDensity;
-  bgSelect.value = settings.backgroundType;
+// 管理員登入
+adminBtn.onclick = () => {
+  const pwd = prompt('請輸入管理員密碼：');
+  if(pwd === '123456'){ // 可替換成你的密碼
+    controls.style.display = 'block';
+    alert('管理員登入成功');
+  } else {
+    alert('密碼錯誤');
+  }
+};
+
+// 彈出/收起禁詞清單
+toggleBtn.onclick = () => {
+  bannedList.style.display = bannedList.style.display==='none'?'block':'none';
+};
+
+// 更新禁詞 UI
+function updateBannedListUI(){
+  bannedList.innerHTML='';
+  bannedWords.forEach(word=>{
+    const li=document.createElement('li');
+    li.textContent=word;
+    const delBtn=document.createElement('button');
+    delBtn.textContent='刪除';
+    delBtn.onclick=()=>socket.emit('removeBannedWord', word);
+    li.appendChild(delBtn);
+    bannedList.appendChild(li);
+  });
+}
+
+// Socket.IO
+socket.on('updateSettings', data=>{
+  settings=data.settings;
+  bannedWords=data.bannedWords;
+
+  speedSlider.value=settings.barrageSpeed;
+  densitySlider.value=settings.barrageDensity;
+  speedLabel.innerText=settings.barrageSpeed;
+  densityLabel.innerText=settings.barrageDensity;
+
+  updateBannedListUI();
 
   if(settings.backgroundType==='video'){
     bgVideo.style.display='block';
     bgImage.style.display='none';
-  }else{
+  } else {
     bgVideo.style.display='none';
     bgImage.style.display='block';
   }
-
-  // QR Code 指向觀眾端
-  // QR Code 指向指定觀眾端網址
-const url = 'https://websocket-62f5.onrender.com/input.html';
-QRCode.toCanvas(document.getElementById('qrcode'), url, { width: 128 });
-
 });
 
-// 控制面板事件
-speedSlider.oninput = () => {
-  speedLabel.innerText = speedSlider.value;
-  socket.emit('updateSettings', {barrageSpeed: parseInt(speedSlider.value)});
-};
-densitySlider.oninput = () => {
-  densityLabel.innerText = densitySlider.value;
-  socket.emit('updateSettings', {barrageDensity: parseInt(densitySlider.value)});
-};
-bgSelect.onchange = () => {
-  socket.emit('updateSettings', {backgroundType:bgSelect.value});
-};
-addBannedBtn.onclick = () => {
-  const word = newBannedWordInput.value.trim();
-  if(word) socket.emit('addBannedWord', word);
-  newBannedWordInput.value = '';
+// 發送彈幕
+sendBtn.onclick = () => {
+  const text = input.value.trim();
+  if(!text) return;
+  if(bannedWords.some(word => text.includes(word))){
+    alert('包含禁止詞彙！');
+    return;
+  }
+  socket.emit('sendDanmaku', {text, color: colorPicker.value});
+  input.value='';
 };
 
-// 顯示彈幕
-socket.on('receiveDanmaku', msg => {
-  createDanmaku(msg);
+// 接收彈幕
+socket.on('receiveDanmaku', data=>{
+  for(let i=0;i<settings.barrageDensity;i++){
+    createDanmaku(data);
+  }
 });
 
-function createDanmaku(msg){
-  const div = document.createElement('div');
-  div.className = 'danmaku';
-  div.innerText = msg;
-  div.style.top = (Math.random()*20+10)+'%';
-  div.style.left = -div.offsetWidth+'px';
+// 創建彈幕
+function createDanmaku({text, color}){
+  const div=document.createElement('div');
+  div.className='danmaku';
+  div.innerText=text;
+  div.style.color=color || '#fff';
+  div.style.top=(Math.random()*50+10)+'%';
+  div.style.left=-100+'px';
   container.appendChild(div);
-  let speedValue = settings.barrageSpeed + 1;
+
+  let speed=settings.barrageSpeed;
+
   function animate(){
-    let currentX = parseFloat(div.style.left);
-    div.style.left = currentX + speedValue + 'px';
+    let currentX=parseFloat(div.style.left);
+    div.style.left=currentX+speed+'px';
     if(currentX<window.innerWidth){
       requestAnimationFrame(animate);
-    }else{
+    } else {
       div.remove();
     }
   }
   requestAnimationFrame(animate);
 }
+
+// 管理員控制
+speedSlider.oninput=()=> {
+  speedLabel.innerText=speedSlider.value;
+  socket.emit('updateSettings',{barrageSpeed:parseInt(speedSlider.value)});
+};
+densitySlider.oninput=()=> {
+  densityLabel.innerText=densitySlider.value;
+  socket.emit('updateSettings',{barrageDensity:parseInt(densitySlider.value)});
+};
+bgSelectVideo.onchange=(e)=>{
+  const file=e.target.files[0];
+  if(file){
+    const url=URL.createObjectURL(file);
+    bgVideo.src=url;
+    bgVideo.style.display='block';
+    bgImage.style.display='none';
+    socket.emit('updateSettings',{backgroundType:'video'});
+  }
+};
+bgSelectImage.onchange=(e)=>{
+  const file=e.target.files[0];
+  if(file){
+    const url=URL.createObjectURL(file);
+    bgImage.src=url;
+    bgImage.style.display='block';
+    bgVideo.style.display='none';
+    socket.emit('updateSettings',{backgroundType:'image'});
+  }
+};
+
+// 新增禁詞
+addBannedBtn.onclick=()=>{
+  const word=newBannedWordInput.value.trim();
+  if(word) socket.emit('addBannedWord', word);
+  newBannedWordInput.value='';
+};
 </script>
+
 </body>
 </html>
-

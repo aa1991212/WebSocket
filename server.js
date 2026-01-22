@@ -7,40 +7,46 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
-// 初始設定
+app.use(express.static(path.join(__dirname, 'public')));
+
 let settings = {
-  barrageSpeed: 3,
+  barrageSpeed: 2,
   barrageDensity: 1,
   backgroundType: 'video'
 };
+
 let bannedWords = [];
 
-// 靜態目錄
-app.use(express.static(path.join(__dirname, 'public')));
-
-// Socket.IO
 io.on('connection', (socket) => {
   console.log('a user connected');
 
-  // 新連線就發設定
-  socket.emit('updateSettings', {settings, bannedWords});
-
+  // 發送彈幕
   socket.on('sendDanmaku', (msg) => {
-    // 禁詞檢查
+    // 檢查禁詞
     if(bannedWords.some(word => msg.includes(word))){
       socket.emit('bannedAlert', msg);
       return;
     }
-    io.emit('receiveDanmaku', msg); // 廣播給所有人
+    io.emit('receiveDanmaku', msg);
   });
 
+  // 更新管理員設定
   socket.on('updateSettings', data => {
     settings = {...settings, ...data};
     io.emit('updateSettings', {settings, bannedWords});
   });
 
+  // 新增禁詞
   socket.on('addBannedWord', word => {
-    bannedWords.push(word);
+    if(!bannedWords.includes(word)){
+      bannedWords.push(word);
+      io.emit('updateSettings', {settings, bannedWords});
+    }
+  });
+
+  // 刪除禁詞
+  socket.on('removeBannedWord', word => {
+    bannedWords = bannedWords.filter(w => w!==word);
     io.emit('updateSettings', {settings, bannedWords});
   });
 
@@ -49,6 +55,6 @@ io.on('connection', (socket) => {
   });
 });
 
-server.listen(process.env.PORT || 3000, () => {
-  console.log('Server running');
+server.listen(3000, () => {
+  console.log('Server running at http://localhost:3000');
 });
